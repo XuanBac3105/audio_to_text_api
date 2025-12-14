@@ -1,0 +1,9 @@
+# Ignore files
+.env
+venv/
+__pycache__/
+*.pyc
+/tmp/uploads/*
+/tmp/outputs/*
+.DS_Store
+ngrok.exe
