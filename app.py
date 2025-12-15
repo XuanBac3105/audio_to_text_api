@@ -157,10 +157,10 @@ def poll_transcription(transcript_id, timeout=600):
 
 def process_files(files, language, output_name):
     """
-    BATCH PIPELINE:
+    OPTIMIZED BATCH PIPELINE:
     PHASE 1: Transcribe tất cả files, gộp text vào list
-    PHASE 2: Gọi Gemini 1 lần với text gộp để soát lỗi
-    PHASE 3: Lưu kết quả
+    PHASE 2: Chia batch nhỏ (5 files/batch), gọi Gemini từng batch (tiết kiệm token)
+    PHASE 3: Lưu kết quả gộp
     """
     global processing_status
     processing_status["running"] = True
@@ -200,16 +200,26 @@ def process_files(files, language, output_name):
         else:
             log_queue.put(f"❌ Không nhận được kết quả")
     
-    # PHASE 2: Gộp text và soát lỗi 1 lần bằng Gemini
+    # PHASE 2: Chia batch 5 files/lần, gọi Gemini từng batch (tiết kiệm token)
     if all_texts:
-        log_queue.put("\n🤖 Proofing lỗi bằng Gemini...")
-        combined_text = "\n".join(all_texts)
-        proofread_text = proofread_text_with_gemini(combined_text)
+        log_queue.put("\n🤖 Proofing lỗi bằng Gemini (batch processing)...")
+        batch_size = 5
+        all_proofread = []
         
-        # PHASE 3: Lưu kết quả
+        for i in range(0, len(all_texts), batch_size):
+            batch = all_texts[i:i+batch_size]
+            batch_text = "\n".join(batch)
+            log_queue.put(f"  📦 Batch {i//batch_size + 1}: {len(batch)} files")
+            
+            proofread_batch = proofread_text_with_gemini(batch_text)
+            all_proofread.append(proofread_batch)
+        
+        # PHASE 3: Lưu kết quả gộp
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_name)
         with open(output_path, "w", encoding="utf-8") as out:
-            out.write(proofread_text)
+            out.write("\n".join(all_proofread))
+        
+        log_queue.put(f"✅ Đã xử lý {len(all_texts)} files trong {(len(all_texts)-1)//batch_size + 1} batch")
     else:
         log_queue.put("❌ Không có file nào được xử lý thành công")
     
