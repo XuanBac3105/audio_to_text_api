@@ -17,8 +17,8 @@ if not ASSEMBLYAI_API_KEY:
     raise ValueError("ASSEMBLYAI_API_KEY not found in .env file")
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
-app.config['UPLOAD_FOLDER'] = '/tmp/uploads'
-app.config['OUTPUT_FOLDER'] = '/tmp/outputs'
+app.config['UPLOAD_FOLDER'] = os.path.join(os.path.dirname(__file__), 'uploads')
+app.config['OUTPUT_FOLDER'] = os.path.join(os.path.dirname(__file__), 'outputs')
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024 * 1024  # 500MB
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -52,7 +52,7 @@ def proofread_text_with_gemini(text):
     """
     try:
         if not GOOGLE_GEMINI_API_KEY:
-            log_queue.put("⚠️ Gemini API key không tìm thấy, return text gốc")
+            log_queue.put("Gemini API key không tìm thấy, return text gốc")
             return text
         
         genai.configure(api_key=GOOGLE_GEMINI_API_KEY)
@@ -69,31 +69,31 @@ Chỉ trả về văn bản đã được sửa, không giải thích thêm:
         return improved_text
         
     except Exception as e:
-        log_queue.put(f"⚠️ Gemini API lỗi: {str(e)}, dùng text gốc")
+        log_queue.put(f"Gemini API lỗi: {str(e)}, dùng text gốc")
         return text
 
 def upload_audio_file(file_path):
     """Upload audio file to AssemblyAI"""
     try:
-        log_queue.put(f"📤 Uploading: {os.path.basename(file_path)}")
+        log_queue.put(f"Uploading: {os.path.basename(file_path)}")
         with open(file_path, "rb") as f:
             response = requests.post(UPLOAD_ENDPOINT, headers=headers, data=f)
         
         if response.status_code == 200:
             upload_url = response.json()["upload_url"]
-            log_queue.put(f"✅ Upload thành công")
+            log_queue.put(f"Upload thành công")
             return upload_url
         else:
-            log_queue.put(f"❌ Upload lỗi: {response.text}")
+            log_queue.put(f"Upload lỗi: {response.text}")
             return None
     except Exception as e:
-        log_queue.put(f"❌ Upload exception: {str(e)}")
+        log_queue.put(f"Upload exception: {str(e)}")
         return None
 
 def transcribe_audio(audio_url, language="vi"):
     """Submit transcription request to AssemblyAI"""
     try:
-        log_queue.put(f"🎤 Gửi transcription request...")
+        log_queue.put(f"Gửi transcription request...")
         
         language_code = {
             "vi": "vi",
@@ -113,13 +113,13 @@ def transcribe_audio(audio_url, language="vi"):
         
         if response.status_code == 200:
             transcript_id = response.json()['id']
-            log_queue.put(f"✅ Request submitted (ID: {transcript_id[:8]}...)")
+            log_queue.put(f"Request submitted (ID: {transcript_id[:8]}...)")
             return transcript_id
         else:
-            log_queue.put(f"❌ Request lỗi: {response.text}")
+            log_queue.put(f"Request lỗi: {response.text}")
             return None
     except Exception as e:
-        log_queue.put(f"❌ Transcription exception: {str(e)}")
+        log_queue.put(f"Transcription exception: {str(e)}")
         return None
 
 def poll_transcription(transcript_id, timeout=600):
@@ -137,22 +137,22 @@ def poll_transcription(transcript_id, timeout=600):
             
             if status == 'completed':
                 text = result.get('text', '')
-                log_queue.put(f"✅ Transcription xong!")
+                log_queue.put(f"Transcription xong!")
                 return text
             
             elif status == 'error':
-                log_queue.put(f"❌ Transcription error: {result.get('error')}")
+                log_queue.put(f"Transcription error: {result.get('error')}")
                 return None
             
             elif elapsed > timeout:
-                log_queue.put(f"❌ Timeout sau {timeout}s")
+                log_queue.put(f"Timeout sau {timeout}s")
                 return None
             
             else:
                 time.sleep(2)
         
         except Exception as e:
-            log_queue.put(f"❌ Poll exception: {str(e)}")
+            log_queue.put(f"Poll exception: {str(e)}")
             return None
 
 def process_files(files, language, output_name):
@@ -170,7 +170,7 @@ def process_files(files, language, output_name):
     log_queue.put(f"Files selected: {len(files)}")
     log_queue.put(f"Language: {language}")
     log_queue.put(f"Số file: {len(files)}")
-    log_queue.put("⏳ Bắt đầu transcribe...")
+    log_queue.put("Bắt đầu transcribe...")
     
     all_texts = []  # Gộp text từ tất cả files
     
@@ -178,55 +178,57 @@ def process_files(files, language, output_name):
     for idx, file_path in enumerate(files, 1):
         processing_status["current"] = idx
         filename = os.path.basename(file_path)
-        log_queue.put(f"[{idx}/{len(files)}] 📄 {filename}")
+        log_queue.put(f"[{idx}/{len(files)}]  {filename}")
         
         # Upload file
         audio_url = upload_audio_file(file_path)
         if not audio_url:
-            log_queue.put(f"⏭️ Bỏ qua file này")
+            log_queue.put(f"Bỏ qua file này")
             continue
         
         # Transcribe
         transcript_id = transcribe_audio(audio_url, language)
         if not transcript_id:
-            log_queue.put(f"⏭️ Bỏ qua file này")
+            log_queue.put(f"Bỏ qua file này")
             continue
         
         # Poll for result
         text = poll_transcription(transcript_id)
         if text:
-            all_texts.append(f"[{filename}]\n{text}\n")
-            log_queue.put(f"✅ Hoàn thành: {filename}")
+            all_texts.append(f"[{filename}]\n{text}\n\n")
+            log_queue.put(f"Hoàn thành: {filename}")
         else:
-            log_queue.put(f"❌ Không nhận được kết quả")
+            log_queue.put(f"Không nhận được kết quả")
     
     # PHASE 2: Chia batch 5 files/lần, gọi Gemini từng batch (tiết kiệm token)
     if all_texts:
-        log_queue.put("\n🤖 Proofing lỗi bằng Gemini (batch processing)...")
+        log_queue.put("\nProofing lỗi bằng Gemini (batch processing)...")
         batch_size = 5
         all_proofread = []
         
         for i in range(0, len(all_texts), batch_size):
             batch = all_texts[i:i+batch_size]
             batch_text = "\n".join(batch)
-            log_queue.put(f"  📦 Batch {i//batch_size + 1}: {len(batch)} files")
+            log_queue.put(f"Batch {i//batch_size + 1}: {len(batch)} files")
             
             proofread_batch = proofread_text_with_gemini(batch_text)
             all_proofread.append(proofread_batch)
         
         # PHASE 3: Lưu kết quả gộp
+        if not output_name.endswith('.txt'):
+            output_name = output_name + '.txt'
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_name)
         with open(output_path, "w", encoding="utf-8") as out:
-            out.write("\n".join(all_proofread))
+            out.write("\n".join(all_proofread).rstrip())
         
-        log_queue.put(f"✅ Đã xử lý {len(all_texts)} files trong {(len(all_texts)-1)//batch_size + 1} batch")
+        log_queue.put(f"Đã xử lý {len(all_texts)} files trong {(len(all_texts)-1)//batch_size + 1} batch")
     else:
-        log_queue.put("❌ Không có file nào được xử lý thành công")
+        log_queue.put("Không có file nào được xử lý thành công")
     
     elapsed_time = time.time() - processing_status["start_time"]
     processing_status["elapsed_time"] = elapsed_time
     minutes, seconds = divmod(int(elapsed_time), 60)
-    log_queue.put(f"\n🎉 DONE - Thời gian hoàn thành: {minutes}m {seconds}s")
+    log_queue.put(f"\nDONE - Thời gian hoàn thành: {minutes}m {seconds}s")
     processing_status["running"] = False
 
 @app.route('/')
@@ -265,7 +267,11 @@ def get_logs():
 
 @app.route('/download/<filename>')
 def download(filename):
-    return send_file(os.path.join(app.config['OUTPUT_FOLDER'], filename), as_attachment=True)
+    # Thêm .txt extension nếu chưa có
+    if not filename.endswith('.txt'):
+        filename = filename + '.txt'
+    file_path = os.path.join(app.config['OUTPUT_FOLDER'], filename)
+    return send_file(file_path, as_attachment=True, download_name=filename)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
