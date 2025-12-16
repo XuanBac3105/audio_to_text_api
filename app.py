@@ -60,6 +60,7 @@ def proofread_text_with_gemini(text):
         
         # Prompt để sửa chính tả và ngữ pháp
         prompt = f"""Hãy sửa chính tả, ngữ pháp và cải thiện câu văn cho đoạn text dưới đây. 
+QUAN TRỌNG: Giữ nguyên định dạng, dòng trống và xuống dòng.
 Chỉ trả về văn bản đã được sửa, không giải thích thêm:
 
 {text}"""
@@ -195,7 +196,7 @@ def process_files(files, language, output_name):
         # Poll for result
         text = poll_transcription(transcript_id)
         if text:
-            all_texts.append(f"[{filename}]\n{text}\n\n")
+            all_texts.append(f"[{filename}]\n{text}\n")
             log_queue.put(f"Hoàn thành: {filename}")
         else:
             log_queue.put(f"Không nhận được kết quả")
@@ -230,6 +231,13 @@ def process_files(files, language, output_name):
     minutes, seconds = divmod(int(elapsed_time), 60)
     log_queue.put(f"\nDONE - Thời gian hoàn thành: {minutes}m {seconds}s")
     processing_status["running"] = False
+    
+    # Xóa files upload để tiết kiệm dung lượng
+    for file_path in files:
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            log_queue.put(f"Không thể xóa {os.path.basename(file_path)}: {str(e)}")
 
 @app.route('/')
 def index():
